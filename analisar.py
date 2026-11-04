@@ -42,6 +42,19 @@ APAGADO = "#898781"
 GRADE = "#e1e0d9"
 EIXO = "#c3c2b7"
 AZUL = "#2a78d6"
+LARANJA = "#eb6834"
+
+# Grupos usados na comparação entre bancos tradicionais e digitais (cartões do mesmo grupo entram junto)
+BANCOS_TRADICIONAIS = {
+    "Banco Santander": "Santander", "Banco do Brasil": "Banco do Brasil", "Ourocard": "Banco do Brasil",
+    "Banco Bradesco": "Bradesco", "Bradesco Cartões": "Bradesco", "Bradescard": "Bradesco",
+    "Caixa Econômica Federal": "Caixa", "Banco Itaú Unibanco": "Itaú", "Cartões Itaú": "Itaú",
+}
+BANCOS_DIGITAIS = {
+    "Nubank": "Nubank", "Banco Inter (Banco Intermedium)": "Inter", "C6 Bank": "C6 Bank",
+    "Mercado Pago": "Mercado Pago", "PicPay": "PicPay", "Will Bank": "Will Bank", "NEON Financeira": "Neon",
+    "Pagseguro": "PagBank", "PagBank (Antiga PagSeguro)": "PagBank",
+}
 
 plt.rcParams.update({
     "font.family": ["Segoe UI", "DejaVu Sans"],
@@ -136,6 +149,123 @@ def curto(nome, limite=48):
     return nome if len(nome) <= limite else nome[: limite - 1].rstrip() + "…"
 
 
+def literatura(t, ano):
+    """Indicadores que dialogam com os estudos sobre o Consumidor.gov.br (ver README)."""
+    total = len(t)
+    resolvidas = (t["resolvida"] == True).sum()
+    nao_avaliadas = (~t["avaliada"]).sum()
+
+    # Três formas de medir a solução. A plataforma conta as não avaliadas como resolvidas.
+    medidas = {
+        "oficial (resolvidas + não avaliadas, sobre o total)": (resolvidas + nao_avaliadas) / total,
+        "entre as avaliadas (usado neste projeto)": resolvidas / t["avaliada"].sum(),
+        "estrita (resolvidas sobre o total)": resolvidas / total,
+    }
+    pd.Series(medidas, name="indice_solucao").rename_axis("medida").to_csv(
+        RESULTADOS / "tres_medidas_de_solucao.csv", encoding="utf-8-sig")
+
+    emp = t.groupby("empresa", observed=True).agg(reclamacoes=("empresa", "size"), avaliadas=("avaliada", "mean"),
+                                                 resolvidas=("resolvida", lambda s: (s == True).sum()))
+    emp["indice_oficial"] = (emp["resolvidas"] + emp["reclamacoes"] * (1 - emp["avaliadas"])) / emp["reclamacoes"]
+    emp["indice_avaliadas"] = emp["resolvidas"] / (emp["reclamacoes"] * emp["avaliadas"])
+    grandes = emp[emp["reclamacoes"] >= MIN_EMPRESA].copy()
+    grandes["posicao_oficial"] = grandes["indice_oficial"].rank(ascending=False).astype(int)
+    grandes["posicao_avaliadas"] = grandes["indice_avaliadas"].rank(ascending=False).astype(int)
+    grandes.sort_values("indice_oficial", ascending=False).to_csv(
+        RESULTADOS / "empresas_indice_oficial_e_avaliadas.csv", encoding="utf-8-sig")
+    correl = grandes[["indice_oficial", "indice_avaliadas"]].corr(method="spearman").iloc[0, 1]
+    correl_aval = grandes[["avaliadas", "indice_oficial"]].corr(method="spearman").iloc[0, 1]
+
+    top = emp.sort_values("reclamacoes", ascending=False).head(20).sort_values("indice_avaliadas")
+    fig, ax = plt.subplots(figsize=(9, 8.2))
+    y = np.arange(len(top))
+    ax.hlines(y, top["indice_avaliadas"], top["indice_oficial"], color=EIXO, linewidth=2)
+    ax.plot(top["indice_avaliadas"], y, "o", color=AZUL, markersize=8, markeredgecolor=SUPERFICIE,
+            markeredgewidth=2, label="Resolvidas entre as avaliadas")
+    ax.plot(top["indice_oficial"], y, "o", color=LARANJA, markersize=8, markeredgecolor=SUPERFICIE,
+            markeredgewidth=2, label="Índice oficial (não avaliadas contam como resolvidas)")
+    for i, (_, l) in enumerate(top.iterrows()):
+        ax.text(l["indice_oficial"] + 0.012, i, f"{pct(l['avaliadas'])} avaliadas", va="center", fontsize=8.5,
+                color=TINTA_2)
+    ax.set_yticks(y, [curto(k, 34) for k in top.index], color=TINTA)
+    ax.set_xlim(0, 1.12)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: pct(v)))
+    ax.grid(axis="x", color=GRADE, linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.tick_params(length=0)
+    ax.spines["left"].set_visible(False)
+    ax.legend(frameon=False, loc="lower left", fontsize=9, bbox_to_anchor=(0, -0.13), ncol=2)
+    finalizar(fig, ax, "O índice oficial infla a solução de quem tem poucas avaliações",
+              f"Duas medidas do índice de solução, 20 empresas com mais reclamações em {ano}", "06_indice_oficial.png")
+
+    # Distribuição das notas (formato em J das avaliações online)
+    notas = t.loc[t["avaliada"], "nota"].value_counts(normalize=True).sort_index()
+    notas.rename("parcela").to_csv(RESULTADOS / "distribuicao_notas.csv", encoding="utf-8-sig")
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    ax.bar(notas.index, notas.to_numpy(), width=0.62, color=AZUL, edgecolor=SUPERFICIE, linewidth=1)
+    for k, v in notas.items():
+        ax.text(k, v + 0.008, pct(v), ha="center", va="bottom", fontsize=9.5, color=TINTA)
+    ax.set_xticks(notas.index, [f"Nota {int(k)}" for k in notas.index], color=TINTA)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: pct(v)))
+    ax.grid(axis="y", color=GRADE, linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.tick_params(length=0)
+    finalizar(fig, ax, "Quem avalia tende aos extremos",
+              f"Distribuição das notas dadas pelos {pct(t['avaliada'].mean())} de consumidores que avaliaram, {ano}",
+              "07_distribuicao_notas.png")
+
+    # Bancos tradicionais e digitais
+    grupos = {**{k: (v, "Tradicional") for k, v in BANCOS_TRADICIONAIS.items()},
+              **{k: (v, "Digital") for k, v in BANCOS_DIGITAIS.items()}}
+    b = t[t["empresa"].isin(grupos.keys())].copy()
+    b["empresa"] = b["empresa"].astype(str)
+    b["banco"] = b["empresa"].map(lambda e: grupos[e][0])
+    b["tipo"] = b["empresa"].map(lambda e: grupos[e][1])
+    por_banco = indicadores(b, "banco")
+    por_banco["tipo"] = por_banco.index.map({v: tp for v, tp in grupos.values()})
+    por_banco.to_csv(RESULTADOS / "bancos_tradicionais_e_digitais.csv", encoding="utf-8-sig")
+    por_tipo = indicadores(b, "tipo")
+    por_tipo.to_csv(RESULTADOS / "bancos_por_tipo.csv", encoding="utf-8-sig")
+
+    r = por_banco.sort_values("indice_solucao")
+    fig, ax = plt.subplots(figsize=(9, 6))
+    y = np.arange(len(r))
+    cores = [LARANJA if tp == "Digital" else AZUL for tp in r["tipo"]]
+    ax.barh(y, r["indice_solucao"], height=0.62, color=cores, edgecolor=SUPERFICIE, linewidth=1)
+    for i, (_, l) in enumerate(r.iterrows()):
+        ax.text(l["indice_solucao"] + 0.008, i, f"{pct(l['indice_solucao'])}  ({mil(l['reclamacoes'])} reclamações)",
+                va="center", fontsize=9, color=TINTA_2)
+    ax.set_yticks(y, r.index, color=TINTA)
+    ax.set_xlim(0, r["indice_solucao"].max() * 1.45)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: pct(v)))
+    ax.grid(axis="x", color=GRADE, linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.tick_params(length=0)
+    ax.spines["left"].set_visible(False)
+    from matplotlib.patches import Patch
+    ax.legend(handles=[Patch(color=AZUL, label="Banco tradicional"), Patch(color=LARANJA, label="Banco digital ou carteira")],
+              frameon=False, loc="lower right", fontsize=9)
+    finalizar(fig, ax, "Ser digital não garante resolver mais",
+              f"Resolvidas entre as avaliadas, grandes bancos e instituições digitais, {ano}", "08_bancos.png")
+
+    return {
+        "índice de solução oficial (não avaliadas contam como resolvidas)": pct(medidas[list(medidas)[0]]),
+        "índice de solução entre as avaliadas": pct(medidas[list(medidas)[1]]),
+        "índice de solução estrito (resolvidas sobre o total)": pct(medidas[list(medidas)[2]]),
+        "correlação de postos entre índice oficial e entre avaliadas (empresas com 5 mil+)": f"{correl:.2f}".replace(".", ","),
+        "correlação de postos entre taxa de avaliação e índice oficial": f"{correl_aval:.2f}".replace(".", ","),
+        "notas 1 ou 5 entre as avaliações": pct(notas.get(1, 0) + notas.get(5, 0)),
+        "solução entre avaliadas, bancos tradicionais": pct(por_tipo.loc["Tradicional", "indice_solucao"]),
+        "solução entre avaliadas, bancos digitais": pct(por_tipo.loc["Digital", "indice_solucao"]),
+        "solução entre avaliadas, digitais sem o Nubank":
+            pct(b.loc[(b["tipo"] == "Digital") & (b["banco"] != "Nubank"), "resolvida"].mean()),
+        "nota média, bancos tradicionais": f"{por_tipo.loc['Tradicional', 'nota_media']:.2f}".replace(".", ","),
+        "nota média, bancos digitais": f"{por_tipo.loc['Digital', 'nota_media']:.2f}".replace(".", ","),
+        "solução entre avaliadas, procurou a empresa antes": pct(t.loc[t["procurou_empresa"] == True, "resolvida"].mean()),
+        "solução entre avaliadas, não procurou antes": pct(t.loc[t["procurou_empresa"] == False, "resolvida"].mean()),
+    }
+
+
 def analisar(ano):
     RESULTADOS.mkdir(exist_ok=True)
     FIGURAS.mkdir(exist_ok=True)
@@ -226,6 +356,7 @@ def analisar(ano):
     procurou = indicadores(t, "procurou_empresa")
     procurou.to_csv(RESULTADOS / "por_procurou_empresa.csv", encoding="utf-8-sig")
 
+    resumo.update(literatura(t, ano))
     pd.Series(resumo, name="valor").rename_axis("indicador").to_csv(RESULTADOS / "resumo.csv", encoding="utf-8-sig")
 
     cols = ["reclamacoes", "participacao", "indice_resposta", "tempo_resposta_dias", "indice_solucao", "nota_media"]
