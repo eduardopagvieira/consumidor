@@ -11,7 +11,8 @@ Uso:
 
 Saídas:
     dados/brutos/finalizadas_AAAA-MM.zip     arquivos originais, nunca editados
-    dados/consumidor_AAAA.csv                todos os meses juntos numa tabela
+    dados/consumidor_AAAA.csv.gz             todos os meses juntos numa tabela, compactada com gzip
+                                             (o pandas lê direto com pd.read_csv)
 """
 
 import argparse
@@ -86,8 +87,8 @@ def juntar(zips, ano):
         print(f"  {z.name}: {len(t)} linhas, {t.shape[1] - 1} colunas")
         partes.append(t)
     tabela = pd.concat(partes, ignore_index=True)
-    saida = Path(f"dados/consumidor_{ano}.csv")
-    tabela.to_csv(saida, index=False, encoding="utf-8-sig")
+    saida = Path(f"dados/consumidor_{ano}.csv.gz")
+    tabela.to_csv(saida, index=False, encoding="utf-8-sig", compression="gzip")
     print(f"{len(tabela)} reclamações e {tabela.shape[1]} colunas salvas em {saida}")
 
 

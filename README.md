@@ -20,7 +20,7 @@ Observações sobre os dados de 2025
 ## Método
 
 1. Os zips mensais são baixados pelo navegador. O site tem uma proteção contra robôs que recusa downloads feitos por script, então `links_2025.html` reúne os links diretos dos 12 meses.
-2. `baixar_consumidor.py` encontra os zips (em Downloads ou nas pastas do projeto), move para `dados/brutos/`, confere o tamanho de cada um com o publicado no site e junta tudo em `dados/consumidor_2025.csv`, com uma coluna indicando o arquivo de origem.
+2. `baixar_consumidor.py` encontra os zips (em Downloads ou nas pastas do projeto), move para `dados/brutos/`, confere o tamanho de cada um com o publicado no site e junta tudo em `dados/consumidor_2025.csv.gz`, com uma coluna indicando o arquivo de origem. O arquivo é compactado com gzip (68 MB em vez de 808 MB) e o pandas lê direto com `pd.read_csv`.
 
 Próximas etapas são limpeza, indicadores por setor e empresa e análise do texto das reclamações.
 
