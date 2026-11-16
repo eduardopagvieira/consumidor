@@ -52,7 +52,7 @@ def limpar(ano):
     t["tempo_resposta_dias"] = pd.to_numeric(t["tempo_resposta_dias"], errors="coerce")
     t["nota"] = pd.to_numeric(t["nota"], errors="coerce")
 
-    t["regiao"] = t["regiao"].map(REGIOES).astype("category")
+    t["regiao"] = t["regiao"].astype(str).str.strip().map(REGIOES).astype("category")  # o arquivo traz "N " e "S " com espaço
     t["sexo"] = t["sexo"].map({"M": "Masculino", "F": "Feminino", "O": "Outro"}).astype("category")
     t["faixa_etaria"] = pd.Categorical(t["faixa_etaria"], categories=FAIXAS, ordered=True)
 
